@@ -76,6 +76,7 @@ function App() {
           content: `${gqlSchema} \n\n Using the graphql schema above, create a graphql query for the message: ${query}. return only the graphql query`,
         },
       ],
+      temperature: 0,
     };
 
     try {
