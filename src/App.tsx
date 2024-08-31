@@ -1,11 +1,130 @@
+import { useState } from "react";
+import { gql, request } from "graphql-request";
+
 import TheGraphLogo from "./assets/thegraphlogo.png";
+import { extractBracesContent, processMd } from "./utils";
+
+const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 
 function App() {
+  const [query, setQuery] = useState(
+    "the first 6 addresses that made transfers throughout the month of january, 2021, the time they made the transfers, and the amount they transferred"
+  );
+  const [output, setOutput] = useState<any>("");
+  const [checked, setchecked] = useState(false);
+  const [generatingQuery, setGeneratingQuery] = useState(false);
+  const [sendingQuery, setSendingQuery] = useState(false);
+
+  const gqlSchema = `
+  type Approval @entity(immutable: true) {
+    id: Bytes!
+    owner: Bytes! # address
+    spender: Bytes! # address
+    value: BigInt! # uint256
+    blockNumber: BigInt!
+    blockTimestamp: BigInt!
+    transactionHash: Bytes!
+  }
+  
+  type OwnershipTransferred @entity(immutable: true) {
+    id: Bytes!
+    previousOwner: Bytes! # address
+    newOwner: Bytes! # address
+    blockNumber: BigInt!
+    blockTimestamp: BigInt!
+    transactionHash: Bytes!
+  }
+  
+  type Transfer @entity(immutable: true) {
+    id: Bytes!
+    from: Bytes! # address
+    to: Bytes! # address
+    value: BigInt! # uint256
+    blockNumber: BigInt!
+    blockTimestamp: BigInt!
+    transactionHash: Bytes!
+  }`;
+
+  const url =
+    "https://api.studio.thegraph.com/query/87097/usdt-ethereum/version/latest";
+  async function fetchSubgraphData(query) {
+    return await request(url, query);
+  }
+
+  const sendQuery = async (e) => {
+    e.preventDefault();
+
+    if (!checked) {
+      alert(
+        "Please check the box. Query cannot be outside the context of BSC USDT smart contract "
+      );
+      return;
+    }
+
+    const payload = {
+      model: "gpt-4o-mini",
+      // response_format: {
+      //   type: "json_object",
+      // },
+      messages: [
+        {
+          role: "system",
+          content: "You are a helpful assistant.",
+        },
+        {
+          role: "user",
+          content: `${gqlSchema} \n\n Using the graphql schema above, create a graphql query for the message: ${query}. return only the graphql query`,
+        },
+      ],
+    };
+
+    try {
+      setGeneratingQuery(true);
+      await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + API_KEY,
+        },
+        body: JSON.stringify(payload),
+      })
+        .then((res) => {
+          return res.json();
+        })
+        .then((data) => {
+          let output = data?.choices[0].message.content;
+          let content = extractBracesContent(output);
+          setOutput(content);
+
+          let query = gql`
+            ${content}
+          `;
+
+          setGeneratingQuery(false);
+          setSendingQuery(true);
+
+          fetchSubgraphData(query)
+            .then((data) => {
+              console.log("data: ", data);
+              setOutput(JSON.stringify(data));
+            })
+            .catch(console.error);
+        });
+    } catch (error) {
+      console.log(error);
+    } finally {
+      setGeneratingQuery(false);
+      setSendingQuery(false);
+    }
+  };
+
   return (
     <div className="bg-black w-full min-h-screen text-white pb-[200px]">
       <div className="h-10 w-full">
         <div className="flex flex-col pl-5 pt-5">
-          <p className="text-4xl font-bold">QuerifyAI</p>
+          <p className="text-4xl font-bold">
+            Querify<span className="text-green-600">AI</span>
+          </p>
           <p className="text-sm">Query blockchain data with AI</p>
         </div>
       </div>
@@ -20,7 +139,7 @@ function App() {
         QuerifyAI makes querying the blockchain data as easy as chatting with an
         AI
       </p>
-      <p className="italic text-center mt-8 flex items-center justify-center gap-1">
+      <p className="italic text-center mt-8 flex items-center justify-center gap-1 text-green-500">
         Powered by <img width={"100px"} src={TheGraphLogo} />{" "}
       </p>
 
@@ -33,8 +152,7 @@ function App() {
             Enter your query
           </label>
         </div>
-
-        <form className="w-[600px]">
+        <form className="w-[600px]" onSubmit={(e) => sendQuery(e)}>
           <div className="w-full mb-4 border border-gray-200 rounded-lg bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
             <div className="px-4 py-2 bg-white rounded-t-lg dark:bg-gray-800">
               <label for="comment" className="sr-only">
@@ -42,6 +160,8 @@ function App() {
               </label>
               <textarea
                 id="comment"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
                 rows="4"
                 className="w-full px-0 text-sm text-gray-900 bg-white border-0 dark:bg-gray-800 focus:ring-0 dark:text-white dark:placeholder-gray-400 outline-none"
                 placeholder="How many USDT was transfered out of 0x1234 between August 1st and August 31 of 2024?"
@@ -51,9 +171,12 @@ function App() {
             <div className="flex items-center justify-between px-3 py-2 border-t dark:border-gray-600">
               <button
                 type="submit"
-                className="inline-flex items-center py-2.5 px-4 text-xs font-medium text-center text-white bg-blue-700 rounded-lg focus:ring-4 focus:ring-blue-200 dark:focus:ring-blue-900 hover:bg-blue-800"
+                disabled={generatingQuery || sendingQuery}
+                className="inline-flex items-center py-2.5 px-4 text-xs font-medium text-center text-white bg-blue-700 rounded-lg focus:ring-4 focus:ring-blue-200 dark:focus:ring-blue-900 hover:bg-blue-800   disabled:bg-blue-400 disabled:cursor-not-allowed"
               >
-                Query
+                {!sendingQuery && !generatingQuery ? "Query" : ""}
+                {!sendingQuery && generatingQuery ? "Generating Query" : ""}
+                {sendingQuery && !generatingQuery ? "Sending Query" : ""}
               </button>
               <div className="flex ps-0 space-x-1 rtl:space-x-reverse sm:ps-2">
                 <button
@@ -110,12 +233,38 @@ function App() {
             </div>
           </div>
         </form>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          QuerifyAI still in
-          <span className="text-blue-600 dark:text-blue-500 hover:underline ml-1">
-            Experimental Mode
-          </span>
-          .
+
+        <div className="flex items-center ">
+          <input
+            id="link-checkbox"
+            type="checkbox"
+            value="selected"
+            onChange={(e) => setchecked(e.target.checked)}
+            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+          />
+          <label
+            for="link-checkbox"
+            class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-300"
+          >
+            I am querying within the context of
+            <a
+              href="https://bscscan.com/token/0x55d398326f99059ff775485246999027b3197955"
+              className="text-blue-600 dark:text-blue-500 hover:underline"
+            >
+              BSC USDT Contract
+            </a>
+          </label>
+        </div>
+
+        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+          QuerifyAI can only query data on
+          <a
+            href="https://bscscan.com/token/0x55d398326f99059ff775485246999027b3197955"
+            className="text-blue-600 dark:text-blue-500 hover:underline ml-1"
+          >
+            BSC USDT Contract
+          </a>
+          at the moment .
         </p>
       </div>
 
@@ -128,13 +277,15 @@ function App() {
             Output
           </label>
         </div>
-        <textarea
+        <div
           id="message"
           rows="4"
-          class="w-[600px] block p-2.5 text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-          placeholder="No comment..."
+          // value={processMd(output)}
+          dangerouslySetInnerHTML={{ __html: processMd(output) }}
+          className="w-[600px] block overflow-scroll p-2.5 text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+          // placeholder="No comment..."
           disabled
-        ></textarea>
+        ></div>
       </div>
     </div>
   );
