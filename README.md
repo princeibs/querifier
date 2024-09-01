@@ -1,4 +1,5 @@
 # QuerifyAI 
+> QuerifyAI may not produce the most accurate result at this point in time because the data from the contract is still syncing on The Graph and may take up to 3 days from the time of this commit to fully sync. <img width="1401" alt="image" src="https://github.com/user-attachments/assets/f6a9f324-5b18-4cbe-a8c1-c8fde6fb867d">
 
 QuerifyAI simplifies the complexities involved in querying and understanding the blockchain data. It makes interacting with blockchain data as easy as chatting with an AI. 
 
